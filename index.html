@@ -3,38 +3,244 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gemini AI Assistant | Free API Interface</title>
+    <title>Gemini AI - Multi API Support</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-gradient-to-br from-indigo-50 to-purple-50 min-h-screen">
+    <div class="container mx-auto px-4 py-6 max-w-4xl">
+        <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
+            <div class="bg-gradient-to-r from-indigo-600 to-purple-600 p-4">
+                <h1 class="text-2xl font-bold text-white text-center">🤖 Gemini AI Assistant</h1>
+                <p class="text-indigo-100 text-center text-sm mt-1">Multi-API Support • Auto-failover</p>
+            </div>
+            
+            <!-- API Status -->
+            <div class="p-3 bg-gray-50 border-b">
+                <div id="apiStatus" class="flex items-center justify-center gap-2 text-sm">
+                    <i class="fas fa-sync-alt fa-spin text-yellow-500"></i>
+                    <span>Checking available APIs...</span>
+                </div>
+            </div>
+            
+            <!-- Chat Area -->
+            <div id="chatMessages" class="h-[500px] overflow-y-auto p-4 space-y-4 bg-gray-50">
+                <div class="text-center text-gray-500 py-10">
+                    <i class="fas fa-comment-dots text-4xl mb-2"></i>
+                    <p>Type a message to start chatting with Gemini AI</p>
+                </div>
+            </div>
+            
+            <!-- Input Area -->
+            <div class="border-t p-4 bg-white">
+                <div class="flex gap-2">
+                    <textarea id="promptInput" rows="1" placeholder="Ask anything..." 
+                        class="flex-1 px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"></textarea>
+                    <button id="sendBtn" class="bg-indigo-600 text-white px-6 rounded-xl hover:bg-indigo-700">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+                <div class="text-xs text-gray-400 mt-2 text-center">
+                    Press Enter to send • Shift+Enter for new line
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Multiple API endpoints (try karta rahega)
+        const APIS = [
+            {
+                name: "Gemini Proxy 1",
+                url: "https://gemini-proxy.amith.workers.dev/api",
+                paramName: "prompt",
+                usePost: false
+            },
+            {
+                name: "Gemini Proxy 2", 
+                url: "https://gemini.amith.workers.dev",
+                paramName: "prompt",
+                usePost: false
+            },
+            {
+                name: "Official Gemini (needs key)",
+                url: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
+                needsKey: true,
+                usePost: true
+            }
+        ];
+        
+        let currentAPI = null;
+        let totalRequests = 0;
+        
+        const chatMessages = document.getElementById('chatMessages');
+        const promptInput = document.getElementById('promptInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const apiStatus = document.getElementById('apiStatus');
+        
+        // API status check
+        async function checkAPIs() {
+            for (let api of APIS) {
+                if (api.needsKey) continue;
+                try {
+                    const testUrl = `${api.url}?${api.paramName}=test`;
+                    const response = await fetch(testUrl, { method: 'HEAD' });
+                    if (response.ok) {
+                        currentAPI = api;
+                        apiStatus.innerHTML = `<i class="fas fa-check-circle text-green-500"></i> Using: ${api.name}`;
+                        console.log(`✅ ${api.name} is working`);
+                        return true;
+                    }
+                } catch(e) {
+                    console.log(`❌ ${api.name} failed:`, e.message);
+                }
+            }
+            
+            // Agar koi kaam nahi kiya
+            apiStatus.innerHTML = `<i class="fas fa-exclamation-triangle text-red-500"></i> No API available - Using demo mode`;
+            currentAPI = { name: "Demo Mode", demoMode: true };
+            return false;
+        }
+        
+        // Demo responses (agar API down ho)
+        function getDemoResponse(prompt) {
+            const demoResponses = [
+                `I'm Gemini AI, but the API is currently unavailable. Here's a demo response to: "${prompt.substring(0, 50)}..."\n\n💡 Tip: The free APIs might be rate limited. Try again in a few minutes or use Google's official API with a free key.`,
+                `*Demo Mode Active*\n\nI received your message: "${prompt.substring(0, 100)}"\n\nTo get real responses, please:\n1. Get free API key from https://aistudio.google.com\n2. Or wait for proxy APIs to recover`,
+                `📡 API Connection Issue\n\nYour prompt: "${prompt}"\n\nThe Gemini proxy servers are temporarily unavailable. They usually work again after a few minutes.`
+            ];
+            return demoResponses[Math.floor(Math.random() * demoResponses.length)];
+        }
+        
+        // Send message
+        async function sendMessage() {
+            const prompt = promptInput.value.trim();
+            if (!prompt) return;
+            
+            // Add user message
+            addMessage(prompt, true);
+            promptInput.value = '';
+            promptInput.style.height = 'auto';
+            
+            // Show typing
+            showTyping();
+            
+            try {
+                let responseText = '';
+                
+                if (currentAPI?.demoMode || !currentAPI) {
+                    // Demo mode
+                    await new Promise(r => setTimeout(r, 1000));
+                    responseText = getDemoResponse(prompt);
+                } else {
+                    // Real API call
+                    const url = `${currentAPI.url}?${currentAPI.paramName}=${encodeURIComponent(prompt)}`;
+                    const res = await fetch(url);
+                    const data = await res.json();
+                    responseText = data.response || data.result || data.content || "No response from API";
+                }
+                
+                addMessage(responseText, false);
+                totalRequests++;
+                
+            } catch (error) {
+                addMessage(`⚠️ Error: ${error.message}\n\nTry again in a few minutes.`, false);
+            } finally {
+                removeTyping();
+            }
+        }
+        
+        function addMessage(content, isUser) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `flex gap-3 ${isUser ? 'flex-row-reverse' : ''} animate-fade-in`;
+            messageDiv.innerHTML = `
+                <div class="w-8 h-8 rounded-full ${isUser ? 'bg-blue-600' : 'bg-purple-600'} flex items-center justify-center">
+                    <i class="fas ${isUser ? 'fa-user' : 'fa-robot'} text-white text-sm"></i>
+                </div>
+                <div class="max-w-[70%]">
+                    <div class="${isUser ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-800'} rounded-2xl px-4 py-2">
+                        <p class="text-sm whitespace-pre-wrap">${escapeHtml(content)}</p>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-1">${new Date().toLocaleTimeString()}</p>
+                </div>
+            `;
+            
+            // Clear welcome message if exists
+            if (chatMessages.children.length === 1 && chatMessages.children[0].classList?.contains('text-center')) {
+                chatMessages.innerHTML = '';
+            }
+            
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        function showTyping() {
+            const typing = document.createElement('div');
+            typing.id = 'typing';
+            typing.className = 'flex gap-3';
+            typing.innerHTML = `
+                <div class="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center">
+                    <i class="fas fa-robot text-white text-sm"></i>
+                </div>
+                <div class="bg-gray-200 rounded-2xl px-4 py-2">
+                    <div class="flex gap-1">
+                        <span class="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></span>
+                        <span class="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style="animation-delay: 0.2s"></span>
+                        <span class="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style="animation-delay: 0.4s"></span>
+                    </div>
+                </div>
+            `;
+            chatMessages.appendChild(typing);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        function removeTyping() {
+            const typing = document.getElementById('typing');
+            if (typing) typing.remove();
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Event listeners
+        sendBtn.addEventListener('click', sendMessage);
+        promptInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+        
+        promptInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+        });
+        
+        // Initialize
+        checkAPIs();
+    </script>
+    
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&display=swap');
-        
-        * {
-            font-family: 'Inter', sans-serif;
+        @keyframes fade-in {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
-        
-        .typing-indicator {
-            display: inline-flex;
-            gap: 4px;
+        .animate-fade-in {
+            animation: fade-in 0.3s ease-out;
         }
-        
-        .typing-indicator span {
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: #9ca3af;
+        .animate-bounce {
             animation: bounce 1.4s infinite ease-in-out;
         }
-        
-        .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
-        .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
-        
         @keyframes bounce {
             0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
             40% { transform: scale(1.2); opacity: 1; }
         }
-        
-        .message-fade-in {
+    </style>
+</body>
+</html>        .message-fade-in {
             animation: fadeIn 0.3s ease-in;
         }
         
